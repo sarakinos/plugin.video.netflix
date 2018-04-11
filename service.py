@@ -12,7 +12,7 @@ import socket
 from SocketServer import TCPServer
 from xbmc import Monitor
 from resources.lib.KodiHelper import KodiHelper
-from resources.lib.MSLHttpRequestHandler import MSLHttpRequestHandler
+from resources.lib.MSLHttpRequestHandler import MSLTCPServer
 from resources.lib.NetflixHttpRequestHandler import NetflixHttpRequestHandler
 
 
@@ -46,7 +46,7 @@ KODI_HELPER.log(msg='[NS] Picked Port: ' + str(NS_PORT))
 TCPServer.allow_reuse_address = True
 
 # configure the MSL Server
-MSL_SERVER = TCPServer(('127.0.0.1', MSL_PORT), MSLHttpRequestHandler)
+MSL_SERVER = MSLTCPServer(('127.0.0.1', MSL_PORT))
 MSL_SERVER.server_activate()
 MSL_SERVER.timeout = 1
 
@@ -79,10 +79,12 @@ if __name__ == '__main__':
     MSL_SERVER.server_close()
     MSL_SERVER.socket.close()
     MSL_SERVER.shutdown()
+    MSL_SERVER = None
     KODI_HELPER.log(msg='Stopped MSL Service')
 
     # Netflix service shutdown sequence
     NS_SERVER.server_close()
     NS_SERVER.socket.close()
     NS_SERVER.shutdown()
+    NS_SERVER = None
     KODI_HELPER.log(msg='Stopped HTTP Service')

@@ -11,10 +11,9 @@ import BaseHTTPServer
 from urlparse import urlparse, parse_qs
 from resources.lib.MSL import MSL as Msl
 from resources.lib.KodiHelper import KodiHelper
+from SocketServer import TCPServer
 
 KODI_HELPER = KodiHelper()
-MSL = Msl(kodi_helper=KODI_HELPER)
-
 
 class MSLHttpRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     """Handles & translates requests from Inputstream to Netflix"""
@@ -34,7 +33,7 @@ class MSLHttpRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         if len(data) is 2:
             challenge = data[0]
             sid = base64.standard_b64decode(data[1])
-            b64license = MSL.get_license(challenge, sid)
+            b64license = self.server.MSL.get_license(challenge, sid)
             if b64license is not '':
                 self.send_response(200)
                 self.end_headers()
@@ -56,7 +55,7 @@ class MSLHttpRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.send_response(400, 'No id')
         else:
             # Get the manifest with the given id
-            data = MSL.load_manifest(int(params['id'][0]))
+            data = self.server.MSL.load_manifest(int(params['id'][0]))
             self.send_response(200)
             self.send_header('Content-type', 'application/xml')
             self.end_headers()
@@ -65,3 +64,12 @@ class MSLHttpRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def log_message(self, *args):
         """Disable the BaseHTTPServer Log"""
         pass
+
+##################################
+
+class MSLTCPServer(TCPServer):
+
+    def __init__(self, server_address):
+        KODI_HELPER.log(msg='Constructing MSLTCPServer')
+        self.MSL = Msl(kodi_helper=KODI_HELPER)
+        TCPServer.__init__(self, server_address, MSLHttpRequestHandler)

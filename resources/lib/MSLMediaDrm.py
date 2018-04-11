@@ -57,9 +57,8 @@ class MSLMediaDrmCrypto:
   def __del__(self):
     if self.sessionStatus ==  self.AMEDIA_OK:
       self.kodi_helper.log(msg='MediaDrm removing keys...')
-      key_set_id = AMediaDrmByteArray(cast(self.keySetId, c_char_p), len(self.keySetId))
       AMediaDrm_removeKeys = self.libMediaDrm.AMediaDrm_removeKeys
-      AMediaDrm_removeKeys(self.mediaDrm, byref(key_set_id))
+      AMediaDrm_removeKeys(self.mediaDrm, byref(self.sessionId))
       self.kodi_helper.log(msg='closing session...')
       self.__closeSession()
 
@@ -144,9 +143,9 @@ class MSLMediaDrmCrypto:
       AMediaDrm_restoreKeys = self.libMediaDrm.AMediaDrm_restoreKeys
 
       key_set_id = AMediaDrmByteArray(cast(self.keySetId, c_char_p), len(self.keySetId))
-      status = AMediaDrm_restoreKeys(self.mediaDrm, byref(self.sessionId), byref(key_set_id))
+      #status = AMediaDrm_restoreKeys(self.mediaDrm, byref(self.sessionId), byref(key_set_id))
 
-      if status != self.AMEDIA_OK:
+      if True or status != self.AMEDIA_OK:
         need_handshake = True
 
     except:
@@ -189,15 +188,15 @@ class MSLMediaDrmCrypto:
       cast(iv, c_char_p),
       cast(data, c_char_p),
       cast(resultBuffer, c_char_p),
-      cast(len(data), c_ulong))
+      len(data))
     self.kodi_helper.log(msg='MediaDrm decrypt status:' + str(status))
 
     return resultBuffer
 
-  def encrypt(self, data):
+  def encrypt(self, data, esn, sequence_number):
     AMediaDrm_encrypt = self.libMediaDrm.AMediaDrm_encrypt
     resultBuffer = bytes(len(data))
-    iv = os.urandom(16)
+    iv = urandom(16)
 
     status = AMediaDrm_encrypt(self.mediaDrm,
       byref(self.sessionId),
@@ -206,10 +205,18 @@ class MSLMediaDrmCrypto:
       cast(iv, c_char_p),
       cast(data, c_char_p),
       cast(resultBuffer, c_char_p),
-      cast(len(data), c_ulong))
+      len(data))
     self.kodi_helper.log(msg='MediaDrm encrypt status:' + str(status))
 
-    return resultBuffer
+    if status != self.AMEDIA_OK:
+      return
+
+    encryption_envelope = {
+      'ciphertext': base64.standard_b64encode(resultBuffer),
+      'keyid': base64.standard_b64encode(self.keyId),
+      'iv': base64.standard_b64encode(iv)
+    }
+    return encryption_envelope
 
   def sign(self, message):
     AMediaDrm_sign = self.libMediaDrm.AMediaDrm_sign
@@ -221,12 +228,12 @@ class MSLMediaDrmCrypto:
       'JcaAlgorithm.HMAC_SHA256',
       cast(self.hmacKeyId, c_char_p),
       cast(message, c_char_p),
-      cast(len(message), c_ulong),
+      len(message),
       signaturePtr,
       signatureLength)
     self.kodi_helper.log(msg='MediaDrm sign status:' + str(status) + ', signature length:' + str(signatureLength))
 
-    return AMediaDrmByteArray(signaturePtr, signatureLength)
+    return string_at(signaturePtr, signatureLength.value)
 
   def verify(self, message, signature):
     AMediaDrm_verify = self.libMediaDrm.AMediaDrm_verify
@@ -235,9 +242,9 @@ class MSLMediaDrmCrypto:
       'JcaAlgorithm.HMAC_SHA256',
       cast(self.hmacKeyId, c_char_p),
       cast(message, c_char_p),
-      cast(len(message), c_ulong),
+      len(message),
       cast(signature, c_char_p),
-      cast(len(signature), c_ulong))
+      len(signature))
     print 'MediaDrm verify status:' + str(status)
 
     return status == self.AMEDIA_OK
