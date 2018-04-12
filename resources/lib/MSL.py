@@ -452,7 +452,7 @@ class MSL(object):
         }
 
     def __generate_msl_request_data(self, data):
-        self.__load_msl_data()
+        #self.__load_msl_data()
         header_encryption_envelope = self.__encrypt(
             plaintext=self.__generate_msl_header())
         headerdata = base64.standard_b64encode(header_encryption_envelope)
@@ -617,7 +617,6 @@ class MSL(object):
             msl_data_path=self.kodi_helper.msl_data_path,
             filename='msl_data.json')
         msl_data = json.JSONDecoder().decode(raw_msl_data)
-        need_handshake = self.crypto.fromDict(msl_data)
         # Check expire date of the token
         raw_token = msl_data['tokens']['mastertoken']['tokendata']
         base_token = base64.standard_b64decode(raw_token)
@@ -626,9 +625,10 @@ class MSL(object):
         valid_until = datetime.utcfromtimestamp(exp)
         present = datetime.now()
         difference = valid_until - present
-        difference = difference.total_seconds() / 60 / 60
         # If token expires in less then 10 hours or is expires renew it
-        if difference < 10 or need_handshake:
+        self.kodi_helper.log(msg='Expiration time: Key:' + str(valid_until) + ', Now:' + str(present) + ', Diff:' + str(difference.total_seconds()))
+        difference = difference.total_seconds() / 60 / 60
+        if difference < 10 or self.crypto.fromDict(msl_data):
             self.__perform_key_handshake()
             return
 

@@ -2,6 +2,7 @@ from ctypes import *
 from os import urandom
 import json
 import base64
+import pprint
 
 class AMediaDrmByteArray(Structure):
   _fields_ = [("ptr", c_char_p), ("length", c_ulong)]
@@ -47,43 +48,61 @@ class MSLMediaDrmCrypto:
 
     # get the systemId property
     AMediaDrm_getPropertyString = self.libMediaDrm.AMediaDrm_getPropertyString
-    self.systemId = c_char_p()
-    status = AMediaDrm_getPropertyString(self.mediaDrm, 'systemId', byref(self.systemId))
-    self.kodi_helper.log(msg='MediaDrm: status:' + str(status) + " systemId:" + self.systemId.value)
+    helper = c_char_p()
+    status = AMediaDrm_getPropertyString(self.mediaDrm, 'systemId', byref(helper))
+    if status == self.AMEDIA_OK:
+      self.systemId = helper
+      self.kodi_helper.log(msg='MediaDrm systemId:' + self.systemId.value + ', status:' + str(status))
+    else:
+      self.kodi_helper.log(msg='MediaDrm systemId: retrieval failed with status:' + str(status))
+
+    status = AMediaDrm_getPropertyString(self.mediaDrm, 'algorithms', byref(helper))
+    if status == self.AMEDIA_OK:
+      self.kodi_helper.log(msg='MediaDrm algorithms:' + helper.value + ', status:' + str(status))
+    else:
+      self.kodi_helper.log(msg='MediaDrm algorithms: retrieval failed with status:' + str(status))
 
     if status == self.AMEDIA_OK:
       self.__openSession()
 
   def __del__(self):
-    if self.sessionStatus ==  self.AMEDIA_OK:
-      self.kodi_helper.log(msg='MediaDrm removing keys...')
-      AMediaDrm_removeKeys = self.libMediaDrm.AMediaDrm_removeKeys
-      AMediaDrm_removeKeys(self.mediaDrm, byref(self.sessionId))
-      self.kodi_helper.log(msg='closing session...')
-      self.__closeSession()
+    self.__closeSession()
 
     if self.mediaDrm:
       self.kodi_helper.log(msg='releasing DRM...')
       AMediaDrm_release =  self.libMediaDrm.AMediaDrm_release
       AMediaDrm_release(self.mediaDrm)
 
-  def getSystemId(self):
-    return self.systemId.value
-
   def __openSession(self):
     AMediaDrm_openSession = self.libMediaDrm.AMediaDrm_openSession
     self.sessionId = AMediaDrmByteArray()
-    self.sessionStatus = AMediaDrm_openSession(self.mediaDrm, byref(self.sessionId))
-    self.kodi_helper.log(msg='MediaDrm sessionId open: status:' + str(self.sessionStatus) + ', size:' + str(self.sessionId.length))
+    sessionId = AMediaDrmByteArray()
+    self.sessionStatus = AMediaDrm_openSession(self.mediaDrm, byref(sessionId))
+    self.kodi_helper.log(msg='MediaDrm sessionId open: status:' + str(self.sessionStatus) + ', size:' + str(sessionId.length))
+    #Make a copy of the returned session Id
+    self.sessionId = sessionId
+    pprint.pprint(self.sessionId.ptr)
     return self.sessionStatus == self.AMEDIA_OK
 
   def __closeSession(self):
+    if self.sessionStatus !=  self.AMEDIA_OK:
+      return
+    '''
+    self.kodi_helper.log(msg='MediaDrm removing keys...')
+    pprint.pprint('SESSION10 ' + self.sessionId.ptr)
+    AMediaDrm_removeKeys = self.libMediaDrm.AMediaDrm_removeKeys
+    AMediaDrm_removeKeys(self.mediaDrm, byref(self.sessionId))
+    '''
+
+    self.kodi_helper.log(msg='MediaDrm closing session...')
+    pprint.pprint('SESSION11 ' + self.sessionId.ptr)
     AMediaDrm_closeSession = self.libMediaDrm.AMediaDrm_closeSession
     status = AMediaDrm_closeSession(self.mediaDrm, byref(self.sessionId))
     self.kodi_helper.log(msg='MediaDrm session closed: status:' + str(status))
     self.sessionStatus = self.AMEDIA_DRM_SESSION_NOT_OPENED
 
   def __getKeyRequest(self, data):
+    pprint.pprint('SESSION1 ' + self.sessionId.ptr)
     AMediaDrm_getKeyRequest = self.libMediaDrm.AMediaDrm_getKeyRequest
     keyRequestPtr = c_char_p()
     keyRequestLength = c_ulong()
@@ -143,9 +162,9 @@ class MSLMediaDrmCrypto:
       AMediaDrm_restoreKeys = self.libMediaDrm.AMediaDrm_restoreKeys
 
       key_set_id = AMediaDrmByteArray(cast(self.keySetId, c_char_p), len(self.keySetId))
-      #status = AMediaDrm_restoreKeys(self.mediaDrm, byref(self.sessionId), byref(key_set_id))
+      status = AMediaDrm_restoreKeys(self.mediaDrm, byref(self.sessionId), byref(key_set_id))
 
-      if True or status != self.AMEDIA_OK:
+      if status != self.AMEDIA_OK:
         need_handshake = True
 
     except:
@@ -156,6 +175,10 @@ class MSLMediaDrmCrypto:
   def get_key_request(self):
     if self.sessionStatus != self.AMEDIA_OK:
        return
+
+    self.__closeSession()
+    if not self.__openSession():
+      return
 
     drmKeyRequest = self.__getKeyRequest(bytes([10, 122, 0, 108, 56, 43]))
 
@@ -219,27 +242,31 @@ class MSLMediaDrmCrypto:
     return encryption_envelope
 
   def sign(self, message):
+    '''
     AMediaDrm_sign = self.libMediaDrm.AMediaDrm_sign
 
     signaturePtr = c_char_p()
     signatureLength = c_ulong()
+
     status = AMediaDrm_sign(self.mediaDrm,
       byref(self.sessionId),
-      'JcaAlgorithm.HMAC_SHA256',
+      'HmacSHA256',
       cast(self.hmacKeyId, c_char_p),
       cast(message, c_char_p),
       len(message),
-      signaturePtr,
-      signatureLength)
+      byref(signaturePtr),
+      byref(signatureLength))
+
     self.kodi_helper.log(msg='MediaDrm sign status:' + str(status) + ', signature length:' + str(signatureLength))
 
     return string_at(signaturePtr, signatureLength.value)
+    '''
 
   def verify(self, message, signature):
     AMediaDrm_verify = self.libMediaDrm.AMediaDrm_verify
     status = AMediaDrm_verify(self.mediaDrm,
       byref(self.sessionId),
-      'JcaAlgorithm.HMAC_SHA256',
+      'HmacSHA256',
       cast(self.hmacKeyId, c_char_p),
       cast(message, c_char_p),
       len(message),
